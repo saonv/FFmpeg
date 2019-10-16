@@ -132,6 +132,7 @@ static int h264_set_extradata(AVCodecContext *avctx, FFAMediaFormat *format)
 
     memset(&ps, 0, sizeof(ps));
 
+    av_log(NULL, AV_LOG_ERROR, "h264_set_extradata: %d", avctx->extradata_size);
     ret = ff_h264_decode_extradata(avctx->extradata, avctx->extradata_size,
                                    &ps, &is_avc, &nal_length_size, 0, avctx);
     if (ret < 0) {
@@ -294,13 +295,15 @@ static av_cold int mediacodec_decode_init(AVCodecContext *avctx)
 
     FFAMediaFormat *format = NULL;
     MediaCodecH264DecContext *s = avctx->priv_data;
-
+    av_log(NULL, AV_LOG_ERROR, "mediacodec_decode_init:ff_AMediaFormat_new");
+    
     format = ff_AMediaFormat_new();
     if (!format) {
         av_log(avctx, AV_LOG_ERROR, "Failed to create media format\n");
         ret = AVERROR_EXTERNAL;
         goto done;
     }
+    av_log(NULL, AV_LOG_ERROR, "mediacodec_decode_init:ff_AMediaFormat_new:end");
 
     switch (avctx->codec_id) {
 #if CONFIG_H264_MEDIACODEC_DECODER
@@ -308,6 +311,7 @@ static av_cold int mediacodec_decode_init(AVCodecContext *avctx)
         codec_mime = "video/avc";
 
         ret = h264_set_extradata(avctx, format);
+        av_log(NULL, AV_LOG_ERROR, "mediacodec_decode_init:h264_set_extradata: %d", ret);
         if (ret < 0)
             goto done;
         break;
@@ -364,6 +368,7 @@ static av_cold int mediacodec_decode_init(AVCodecContext *avctx)
     ff_AMediaFormat_setString(format, "mime", codec_mime);
     ff_AMediaFormat_setInt32(format, "width", avctx->width);
     ff_AMediaFormat_setInt32(format, "height", avctx->height);
+    ff_AMediaFormat_setInt32(format, "color-format", 0x13);
 
     s->ctx = av_mallocz(sizeof(*s->ctx));
     if (!s->ctx) {
@@ -374,7 +379,9 @@ static av_cold int mediacodec_decode_init(AVCodecContext *avctx)
 
     s->ctx->delay_flush = s->delay_flush;
 
+    av_log(NULL, AV_LOG_ERROR, "mediacodec_decode_init:ff_mediacodec_dec_init: %s", ff_AMediaFormat_toString(format));
     if ((ret = ff_mediacodec_dec_init(avctx, s->ctx, codec_mime, format)) < 0) {
+        av_log(NULL, AV_LOG_ERROR, "mediacodec_decode_init:ff_mediacodec_dec_init: %d", ret);
         s->ctx = NULL;
         goto done;
     }
@@ -427,6 +434,7 @@ static int mediacodec_receive_frame(AVCodecContext *avctx, AVFrame *frame)
         if (s->ctx->current_input_buffer < 0) {
             /* poll for input space */
             index = ff_AMediaCodec_dequeueInputBuffer(s->ctx->codec, 0);
+            av_log(NULL, AV_LOG_ERROR, "ff_AMediaCodec_dequeueInputBuffer: %d", index);
             if (index < 0) {
                 /* no space, block for an output frame to appear */
                 return ff_mediacodec_dec_receive(avctx, s->ctx, frame, true);
@@ -437,6 +445,7 @@ static int mediacodec_receive_frame(AVCodecContext *avctx, AVFrame *frame)
         /* try to flush any buffered packet data */
         if (s->buffered_pkt.size > 0) {
             ret = ff_mediacodec_dec_send(avctx, s->ctx, &s->buffered_pkt, false);
+            av_log(NULL, AV_LOG_ERROR, "ff_mediacodec_dec_send: %d", ret);
             if (ret >= 0) {
                 s->buffered_pkt.size -= ret;
                 s->buffered_pkt.data += ret;
@@ -461,6 +470,7 @@ static int mediacodec_receive_frame(AVCodecContext *avctx, AVFrame *frame)
 
         /* fetch new packet or eof */
         ret = ff_decode_get_packet(avctx, &s->buffered_pkt);
+        av_log(NULL, AV_LOG_ERROR, "ff_decode_get_packet: %d - %d", ret, s->ctx->current_input_buffer);
         if (ret == AVERROR_EOF) {
             AVPacket null_pkt = { 0 };
             ret = ff_mediacodec_dec_send(avctx, s->ctx, &null_pkt, true);
@@ -468,8 +478,10 @@ static int mediacodec_receive_frame(AVCodecContext *avctx, AVFrame *frame)
                 return ret;
             return ff_mediacodec_dec_receive(avctx, s->ctx, frame, true);
         } else if (ret == AVERROR(EAGAIN) && s->ctx->current_input_buffer < 0) {
+            av_log(NULL, AV_LOG_ERROR, "current_input_buffer < 0: %d", ret);
             return ff_mediacodec_dec_receive(avctx, s->ctx, frame, true);
         } else if (ret < 0) {
+            av_log(NULL, AV_LOG_ERROR, "mediacodec_receive_framexxxxxxxx: %d", ret);
             return ret;
         }
     }
